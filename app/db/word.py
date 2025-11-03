@@ -54,3 +54,50 @@ class WordRepository:
             WHERE word = $1;
         """
         await self.db.execute(query, word, telegram_image_id)
+
+    async def get_stats(self):
+        query = """
+            SELECT 
+                COUNT(*) AS total,
+                COUNT(*) FILTER (WHERE phonetic IS NOT NULL) AS with_phonetic,
+                COUNT(*) FILTER (WHERE telegram_audio_id IS NOT NULL) AS with_audio,
+                COUNT(*) FILTER (WHERE telegram_image_id IS NOT NULL) AS with_image
+            FROM words;
+        """
+        return await self.db.fetchrow(query)
+    
+    async def get_daily_stats(self):
+        query = """
+            SELECT 
+                COUNT(*) AS total,
+                COUNT(*) FILTER (WHERE phonetic IS NOT NULL) AS with_phonetic,
+                COUNT(*) FILTER (WHERE telegram_audio_id IS NOT NULL) AS with_audio,
+                COUNT(*) FILTER (WHERE telegram_image_id IS NOT NULL) AS with_image
+            FROM words
+            WHERE (created_at AT TIME ZONE 'Asia/Tashkent')::date = (CURRENT_DATE AT TIME ZONE 'Asia/Tashkent');
+        """
+        return await self.db.fetchrow(query)
+    
+    async def get_weekly_stats(self):
+        query = """
+            SELECT 
+                COUNT(*) AS total,
+                COUNT(*) FILTER (WHERE phonetic IS NOT NULL) AS with_phonetic,
+                COUNT(*) FILTER (WHERE telegram_audio_id IS NOT NULL) AS with_audio,
+                COUNT(*) FILTER (WHERE telegram_image_id IS NOT NULL) AS with_image
+            FROM words
+            WHERE (created_at AT TIME ZONE 'Asia/Tashkent')::date >= (CURRENT_DATE AT TIME ZONE 'Asia/Tashkent') - INTERVAL '7 days';
+        """
+        return await self.db.fetchrow(query)
+    
+    async def get_monthly_stats(self):
+        query = """
+            SELECT 
+                COUNT(*) AS total,
+                COUNT(*) FILTER (WHERE phonetic IS NOT NULL) AS with_phonetic,
+                COUNT(*) FILTER (WHERE telegram_audio_id IS NOT NULL) AS with_audio,
+                COUNT(*) FILTER (WHERE telegram_image_id IS NOT NULL) AS with_image
+            FROM words
+            WHERE (created_at AT TIME ZONE 'Asia/Tashkent')::date >= (CURRENT_DATE AT TIME ZONE 'Asia/Tashkent') - INTERVAL '30 days';
+        """
+        return await self.db.fetchrow(query)

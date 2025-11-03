@@ -33,6 +33,10 @@ class Database:
         async with self.pool.acquire() as conn:
             return await conn.fetchrow(query, *args)
         
+    async def fetchval(self, query: str, *args):
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval(query, *args)
+        
     async def __aenter__(self):
         await self.connect()
         return self

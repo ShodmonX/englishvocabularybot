@@ -3,9 +3,11 @@ from aiogram.types import FSInputFile
 import os
 import random
 import logging
+import aiohttp
+import subprocess
 
 from app.db import WordRepository, Database
-from app.services import DictionaryAPI
+from app.services import DictionaryAPI, Translator
 
 
 import logging
@@ -17,21 +19,21 @@ async def dataPreprocessing(word: str):
     Generate a flashcard for a given word.
 
     Returns:
-        tuple: (success, text_result, image_or_id, word, hasAudio, imagePath)
+        tuple: (success, text_result, image_or_id, word, pronunciation, hasAudio, imagePath)
     """
     word = word.strip()
 
     try:
         data, inDB = await collectData(word)
         if not data:
-            return False, "", None, word, False, None, True
+            return False, "", None, word, "", False, None, True
         
         meanings = data.get("meanings", [])
         hasAudio = True if data.get("audio_url", "") else False
-
+        pronunciation = data.get("phonetic", "")
         result = [f"Word: <b>{word}</b>"]
         if not inDB:
-            imagePath = generateFlashcard(word, data.get("phonetic", ""))
+            imagePath = generateFlashcard(word, pronunciation)
             image = FSInputFile(imagePath, filename=f"{word}.png")
 
         else:
@@ -52,14 +54,11 @@ async def dataPreprocessing(word: str):
                         text += f"\n   <u>Example:</u> {example}"
                     result.append(text)
 
-        return True, "\n".join(result), image, word, hasAudio, imagePath, inDB
+        return True, "\n".join(result), image, word, pronunciation, hasAudio, imagePath, inDB
 
     except Exception as e:
         logging.error(f"dataPreprocessing error: {e}")
-        return False, "", None, word, False, None, True
-
-    finally:
-        pass
+        return False, "", None, word, "", False, None, True
 
 async def collectData(word: str):
     data = {}
@@ -72,7 +71,7 @@ async def collectData(word: str):
             api_data = await api.getData(word)
             data["word"] = api_data[0].get("word", "")
             data["phonetic"]  = api_data[0].get("phonetic", "")
-            data["meanings"] = api_data[0].get("meanings", [])
+            data["meanings"] = await preprocessMeanings(api_data[0].get("meanings", []))
             url = None
             for i in api_data[0].get("phonetics", []):
                 url = i.get("audio", "")
@@ -92,6 +91,28 @@ async def collectData(word: str):
 
     return data, inDB
 
+async def preprocessMeanings(meanings: list[dict]) -> list[dict]:
+    translator = Translator()
+
+    for meaning in meanings:
+        definitions = meaning.get("definitions", [])
+        if not definitions:
+            continue
+
+        for d in definitions:
+            definition = d.get("definition", "")
+            if not definition:
+                continue
+
+            try:
+                translated = await translator.translate(definition)
+                d["definition_original"] = definition
+                d["definition"] = translated
+            except Exception as e:
+                d["definition_original"] = definition
+                d["definition"] = definition
+
+    return meanings
 
 def generateFlashcard(
     word: str,
@@ -157,8 +178,30 @@ def generateFlashcard(
     img.save(output_path)
     return output_path
 
-def deleteFlashcard(path: str):
+def deleteFile(path: str):
     if os.path.exists(path):
         os.remove(path)
     
+async def preprocessAudio(audio_url: str, output_path: str = "audio.ogg"):
+    temp_file = "temp.mp3"
 
+    async with aiohttp.ClientSession() as session:
+        async with session.get(audio_url) as response:
+            if response.status != 200:
+                raise Exception(f"Audio yuklab olinmadi! Status: {response.status}")
+            content = await response.read()
+            with open(temp_file, "wb") as f:
+                f.write(content)
+
+    subprocess.run([
+        "ffmpeg",
+        "-i", temp_file,
+        "-acodec", "libopus",
+        "-b:a", "64k",
+        output_path,
+        "-y"
+    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    os.remove(temp_file)
+
+    return output_path
